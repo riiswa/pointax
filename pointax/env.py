@@ -379,3 +379,57 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
             ),
             "time": spaces.Discrete(params.max_steps_in_episode),
         })
+
+
+    def render(self, state, params, mode="human"):
+        """Simple minimalist rendering: black walls, white space, red goal, green agent."""
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
+
+
+        map_length, map_width = params.maze_map.shape
+
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.set_xlim(-params.x_map_center - 0.5, params.x_map_center + 0.5)
+        ax.set_ylim(-params.y_map_center - 0.5, params.y_map_center + 0.5)
+        ax.set_aspect('equal')
+        ax.axis('off')  # Minimalist - no axes
+
+        # Draw maze: black walls, white empty space
+        for i in range(map_length):
+            for j in range(map_width):
+                x = j - params.x_map_center + 0.5
+                y = params.y_map_center - i - 0.5
+
+                color = 'black' if params.maze_map[i, j] == 1 else 'white'
+                rect = patches.Rectangle((x - 0.5, y - 0.5), 1, 1,
+                                         facecolor=color, edgecolor='none')
+                ax.add_patch(rect)
+
+        # Draw goal (red circle)
+        goal_circle = patches.Circle(state.desired_goal, 0.2, color='red', alpha=0.8)
+        ax.add_patch(goal_circle)
+
+        # Draw agent (green circle)
+        agent_circle = patches.Circle(state.position, 0.15, color='green', alpha=0.9)
+        ax.add_patch(agent_circle)
+
+        plt.title(f'Step: {state.time}', fontsize=10)
+
+        if mode == "human":
+            plt.show()
+        elif mode == "rgb_array":
+            fig.canvas.draw()
+
+            # Get the RGBA buffer and convert to RGB (compatible with newer matplotlib)
+            buf = fig.canvas.buffer_rgba()
+            w, h = fig.canvas.get_width_height()
+
+            # Convert RGBA to RGB by dropping alpha channel
+            rgba_array = jnp.frombuffer(buf, dtype=jnp.uint8).reshape((h, w, 4))
+            rgb_array = rgba_array[:, :, :3]
+
+            plt.close(fig)
+            return rgb_array
+
+        plt.close(fig)

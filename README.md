@@ -187,7 +187,7 @@ If you use this library in your research, please cite:
 
 ```bibtex
 @software{pointmaze_jax,
-  title={JPointax: PointMaze Environment for JAX},
+  title={Pointax: PointMaze Environment for JAX},
   author={Waris Radji},
   year={2025},
   url={https://github.com/riiswa/pointax}
