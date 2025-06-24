@@ -209,3 +209,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Gymnax](https://github.com/RobertTLange/gymnax) for their API
 - [MuJoCo](https://github.com/google-deepmind/mujoco) physics engine for inspiration
 - JAX team for the excellent framework
+
+## Related Work
+
+Pointax builds upon and complements several excellent JAX-based RL environments:
+
+- **[JaxGCRL](https://github.com/MichalBortkiewicz/JaxGCRL/tree/master)**: Brax-accelerated goal-conditioned RL environments including maze implementations.
+
+- **[QDax](https://github.com/adaptive-intelligent-robotics/QDax)**: Quality-Diversity optimization library containing an alternative PointMaze environment.
+
+Pointax differentiates itself by providing, a pure JAX implementation without Brax overhead.
