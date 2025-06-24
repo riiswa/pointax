@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,examples]"
+
+    - name: Lint with flake8
+      run: |
+        flake8 pointax --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 pointax --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+    - name: Check formatting with black
+      run: |
+        black --check pointax tests examples
+
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only pointax tests examples
+
+    - name: Type checking with mypy
+      run: |
+        mypy pointax
+
+    - name: Test with pytest
+      run: |
+        pytest tests/ --cov=pointax --cov-report=xml --cov-report=term-missing
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  integration-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.9"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[examples]"
+
+    - name: Test training example
+      run: |
+        cd examples
+        timeout 300 python training.py || true  # Run for 5min max
+
+    - name: Test video generation
+      run: |
+        cd examples  
+        python video.py
+
+  benchmark:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.9"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run performance benchmarks
+      run: |
+        python -c "
+        import time
+        import jax
+        import pointax
+        
+        # JIT compilation benchmark
+        env = pointax.make_large()
+        params = env.default_params
+        
+        @jax.jit
+        def step_fn(key, state, action):
+            return env.step_env(key, state, action, params)
+            
+        key = jax.random.PRNGKey(42)
+        obs, state = env.reset_env(key, params)
+        action = jax.numpy.zeros(2)
+        
+        # Warmup
+        for _ in range(10):
+            obs, state, reward, done, info = step_fn(key, state, action)
+            
+        # Benchmark
+        start = time.time()
+        for _ in range(1000):
+            obs, state, reward, done, info = step_fn(key, state, action)
+        end = time.time()
+        
+        print(f'1000 JIT steps took {end - start:.3f}s ({1000/(end-start):.1f} steps/s)')
+        assert (end - start) < 1.0, 'Performance regression detected'
+        "
+
+  release:
+    needs: [test, integration-test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.9"
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: |
+        python -m build
+
+    - name: Check package
+      run: |
+        twine check dist/*

@@ -11,8 +11,8 @@ Example usage:
 """
 
 from pointax.env import PointMazeEnv
-from pointax.types import EnvState, EnvParams
 from pointax.mazes import get_available_mazes, is_diverse_maze
+from pointax.types import EnvParams, EnvState
 
 __version__ = "0.1.0"
 __author__ = "riiswa"
@@ -22,6 +22,8 @@ __all__ = [
     "PointMazeEnv",
     "EnvState",
     "EnvParams",
+    "make",
+    "make_custom",
     # Standard environments
     "make_umaze",
     "make_open",
@@ -214,12 +216,10 @@ def list_environments() -> dict:
         "Medium": "8x8 maze with moderate complexity",
         "Large": "12x9 large complex maze",
         "Giant": "16x12 very large maze",
-
         # Diverse goal environments
         "Open_Diverse_G": "Open maze with multiple goal locations",
         "Medium_Diverse_G": "Medium maze with diverse goal placement",
         "Large_Diverse_G": "Large maze with many goal options",
-
         # Diverse goal-reset environments
         "Open_Diverse_GR": "Open maze with combined goal/reset locations",
         "Medium_Diverse_GR": "Medium maze with flexible goal/reset spots",
@@ -245,6 +245,7 @@ def get_environment_info(maze_id: str) -> dict:
 
     # Get maze layout to analyze
     from .mazes import get_maze_layout
+
     layout = get_maze_layout(maze_id)
 
     info = {
@@ -262,11 +263,11 @@ def get_environment_info(maze_id: str) -> dict:
                 cell_counts["walls"] += 1
             elif cell == 0:
                 cell_counts["empty"] += 1
-            elif cell == 'G':
+            elif cell == "G":
                 cell_counts["goals"] += 1
-            elif cell == 'R':
+            elif cell == "R":
                 cell_counts["resets"] += 1
-            elif cell == 'C':
+            elif cell == "C":
                 cell_counts["combined"] += 1
 
     info.update(cell_counts)
@@ -308,3 +309,53 @@ def make(maze_id: str, **kwargs) -> PointMazeEnv:
         raise ValueError(f"Unknown maze_id '{maze_id}'. Available: {available}")
 
     return ENVIRONMENT_REGISTRY[maze_id](**kwargs)
+
+# Custom environment creation
+def make_custom(
+    maze_layout,
+    maze_id: str = "Custom",
+    reward_type: str = "sparse",
+    **kwargs
+):
+    """Create custom PointMaze environment from maze layout.
+
+    Args:
+        maze_layout: 2D list representing the maze where:
+            - 1 or True: wall (impassable)
+            - 0 or False: empty space (passable)
+            - 'G': goal location
+            - 'R': reset location
+            - 'C': combined goal/reset location
+        maze_id: Identifier for the custom maze (default: "Custom")
+        reward_type: 'sparse' or 'dense' reward function
+        **kwargs: Additional environment parameters
+
+    Returns:
+        PointMazeEnv instance
+
+    Example:
+        >>> import pointax
+        >>>
+        >>> # Simple 3x3 maze
+        >>> maze = [
+        ...     [1, 1, 1],
+        ...     [1, 0, 1],
+        ...     [1, 1, 1]
+        ... ]
+        >>> env = pointax.make_custom(maze)
+        >>>
+        >>> # Maze with specific goal/reset locations
+        >>> maze_with_goals = [
+        ...     [1, 1, 1, 1, 1],
+        ...     [1, 'R', 0, 'G', 1],
+        ...     [1, 0, 0, 0, 1],
+        ...     [1, 1, 1, 1, 1]
+        ... ]
+        >>> env = pointax.make_custom(maze_with_goals, reward_type="dense")
+    """
+    return PointMazeEnv(
+        maze_id=maze_id,
+        reward_type=reward_type,
+        custom_maze_layout=maze_layout,
+        **kwargs
+    )

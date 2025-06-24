@@ -1,8 +1,9 @@
 """Maze definitions and utilities for PointMaze environments."""
 
-from typing import Dict, Union, List
-import jax.numpy as jnp
+from typing import Dict, List, Union
+
 import chex
+import jax.numpy as jnp
 
 # Standard maze layouts
 MAZE_LAYOUTS = {
@@ -11,17 +12,15 @@ MAZE_LAYOUTS = {
         [1, 0, 0, 0, 1],
         [1, 1, 1, 0, 1],
         [1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1]
+        [1, 1, 1, 1, 1],
     ],
-
     "Open": [
         [1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1]
+        [1, 1, 1, 1, 1, 1, 1],
     ],
-
     "Medium": [
         [1, 1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 1, 1, 0, 0, 1],
@@ -30,9 +29,8 @@ MAZE_LAYOUTS = {
         [1, 0, 0, 1, 0, 0, 0, 1],
         [1, 0, 1, 0, 0, 1, 0, 1],
         [1, 0, 0, 0, 1, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1]
+        [1, 1, 1, 1, 1, 1, 1, 1],
     ],
-
     "Large": [
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
@@ -42,9 +40,8 @@ MAZE_LAYOUTS = {
         [1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
         [1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1],
         [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ],
-
     "Giant": [
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1],
@@ -59,70 +56,64 @@ MAZE_LAYOUTS = {
         [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ],
-
     # Diverse Goal variations
     "Open_Diverse_G": [
         [1, 1, 1, 1, 1, 1, 1],
-        [1, 'R', 'G', 'G', 'G', 'G', 1],
-        [1, 'G', 'G', 'G', 'G', 'G', 1],
-        [1, 'G', 'G', 'G', 'G', 'G', 1],
-        [1, 1, 1, 1, 1, 1, 1]
+        [1, "R", "G", "G", "G", "G", 1],
+        [1, "G", "G", "G", "G", "G", 1],
+        [1, "G", "G", "G", "G", "G", 1],
+        [1, 1, 1, 1, 1, 1, 1],
     ],
-
     "Medium_Diverse_G": [
         [1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 'R', 0, 1, 1, 0, 0, 1],
-        [1, 0, 0, 1, 0, 0, 'G', 1],
+        [1, "R", 0, 1, 1, 0, 0, 1],
+        [1, 0, 0, 1, 0, 0, "G", 1],
         [1, 1, 0, 0, 0, 1, 1, 1],
         [1, 0, 0, 1, 0, 0, 0, 1],
-        [1, 'G', 1, 0, 0, 1, 0, 1],
-        [1, 0, 0, 0, 1, 'G', 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1]
+        [1, "G", 1, 0, 0, 1, 0, 1],
+        [1, 0, 0, 0, 1, "G", 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
     ],
-
     "Large_Diverse_G": [
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 'R', 0, 0, 0, 1, 'G', 0, 0, 0, 0, 1],
+        [1, "R", 0, 0, 0, 1, "G", 0, 0, 0, 0, 1],
         [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        [1, 0, 0, 0, 0, 'G', 0, 1, 0, 0, 'G', 1],
+        [1, 0, 0, 0, 0, "G", 0, 1, 0, 0, "G", 1],
         [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
-        [1, 0, 'G', 1, 0, 1, 0, 0, 0, 0, 0, 1],
+        [1, 0, "G", 1, 0, 1, 0, 0, 0, 0, 0, 1],
         [1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1],
-        [1, 0, 0, 1, 'G', 0, 'G', 1, 0, 'G', 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        [1, 0, 0, 1, "G", 0, "G", 1, 0, "G", 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ],
-
     # Diverse Goal-Reset variations
     "Open_Diverse_GR": [
         [1, 1, 1, 1, 1, 1, 1],
-        [1, 'C', 'C', 'C', 'C', 'C', 1],
-        [1, 'C', 'C', 'C', 'C', 'C', 1],
-        [1, 'C', 'C', 'C', 'C', 'C', 1],
-        [1, 1, 1, 1, 1, 1, 1]
+        [1, "C", "C", "C", "C", "C", 1],
+        [1, "C", "C", "C", "C", "C", 1],
+        [1, "C", "C", "C", "C", "C", 1],
+        [1, 1, 1, 1, 1, 1, 1],
     ],
-
     "Medium_Diverse_GR": [
         [1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 'C', 0, 1, 1, 0, 0, 1],
-        [1, 0, 0, 1, 0, 0, 'C', 1],
+        [1, "C", 0, 1, 1, 0, 0, 1],
+        [1, 0, 0, 1, 0, 0, "C", 1],
         [1, 1, 0, 0, 0, 1, 1, 1],
         [1, 0, 0, 1, 0, 0, 0, 1],
-        [1, 'C', 1, 0, 0, 1, 0, 1],
-        [1, 0, 0, 0, 1, 'C', 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1]
+        [1, "C", 1, 0, 0, 1, 0, 1],
+        [1, 0, 0, 0, 1, "C", 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
     ],
-
     "Large_Diverse_GR": [
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 'C', 0, 0, 0, 1, 'C', 0, 0, 0, 0, 1],
+        [1, "C", 0, 0, 0, 1, "C", 0, 0, 0, 0, 1],
         [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        [1, 0, 0, 0, 0, 'C', 0, 1, 0, 0, 'C', 1],
+        [1, 0, 0, 0, 0, "C", 0, 1, 0, 0, "C", 1],
         [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
-        [1, 0, 'C', 1, 0, 1, 0, 0, 0, 0, 0, 1],
+        [1, 0, "C", 1, 0, 1, 0, 0, 0, 0, 0, 1],
         [1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1],
-        [1, 0, 0, 1, 'C', 0, 'C', 1, 0, 'C', 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-    ]
+        [1, 0, 0, 1, "C", 0, "C", 1, 0, "C", 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ],
 }
 
 
@@ -162,7 +153,7 @@ def convert_maze_to_numeric(maze: List[List[Union[int, str]]]) -> chex.Array:
     Returns:
         JAX-compatible numeric array
     """
-    symbol_map = {'G': 2, 'R': 3, 'C': 4}
+    symbol_map = {"G": 2, "R": 3, "C": 4}
 
     numeric_maze = []
     for row in maze:
@@ -192,7 +183,7 @@ def compute_all_locations(maze_map: chex.Array) -> Dict:
 
     # Create all possible coordinates
     i_coords, j_coords = jnp.meshgrid(
-        jnp.arange(map_length), jnp.arange(map_width), indexing='ij'
+        jnp.arange(map_length), jnp.arange(map_width), indexing="ij"
     )
     x_coords = (j_coords + 0.5) * 1.0 - x_map_center
     y_coords = y_map_center - (i_coords + 0.5) * 1.0
@@ -200,10 +191,10 @@ def compute_all_locations(maze_map: chex.Array) -> Dict:
 
     # Create masks for each cell type
     flat_maze = maze_map.flatten()
-    empty_mask = (flat_maze == 0)  # Empty cells
-    goal_mask = (flat_maze == 2)  # 'G' cells
-    reset_mask = (flat_maze == 3)  # 'R' cells
-    combined_mask = (flat_maze == 4)  # 'C' cells
+    empty_mask = flat_maze == 0  # Empty cells
+    goal_mask = flat_maze == 2  # 'G' cells
+    reset_mask = flat_maze == 3  # 'R' cells
+    combined_mask = flat_maze == 4  # 'C' cells
 
     # Get coordinates for each type
     max_cells = map_length * map_width
@@ -234,14 +225,14 @@ def compute_all_locations(maze_map: chex.Array) -> Dict:
         num_empty = 1
 
     return {
-        'empty_locations': empty_coords,
-        'goal_locations': goal_coords,
-        'reset_locations': reset_coords,
-        'combined_locations': combined_coords,
-        'num_empty': num_empty,
-        'num_goals': num_goals,
-        'num_resets': num_resets,
-        'num_combined': num_combined,
+        "empty_locations": empty_coords,
+        "goal_locations": goal_coords,
+        "reset_locations": reset_coords,
+        "combined_locations": combined_coords,
+        "num_empty": num_empty,
+        "num_goals": num_goals,
+        "num_resets": num_resets,
+        "num_combined": num_combined,
     }
 
 
@@ -263,4 +254,4 @@ def is_diverse_maze(maze_id: str) -> bool:
     Returns:
         True if maze contains diverse goals/resets
     """
-    return 'Diverse' in maze_id
+    return "Diverse" in maze_id

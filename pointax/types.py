@@ -15,6 +15,7 @@ class EnvState(environment.EnvState):
         desired_goal: [x, y] position of the desired goal
         time: Current timestep
     """
+
     position: chex.Array
     velocity: chex.Array
     desired_goal: chex.Array
@@ -62,6 +63,7 @@ class EnvParams(environment.EnvParams):
         map_length: Number of rows in maze
         map_width: Number of columns in maze
     """
+
     max_steps_in_episode: int = 1000
     dt: float = 0.01  # Matches MuJoCo XML timestep="0.01"
     goal_threshold: float = 0.45  # Matches gymnasium success threshold
@@ -78,7 +80,9 @@ class EnvParams(environment.EnvParams):
     robot_radius: float = 0.1  # Matches XML: geom size="0.1"
     motor_gear: float = 100.0  # Matches XML: motor gear="100"
     friction_coeff: float = 0.5  # Matches XML: friction=".5 .1 .1"
-    mass: float = 1.0  # Computed from density=1000 * sphere_volume ≈ 4.189, simplified to 1.0
+    mass: float = (
+        1.0  # Computed from density=1000 * sphere_volume ≈ 4.189, simplified to 1.0
+    )
 
     # Location arrays for different cell types
     empty_locations: chex.Array = None

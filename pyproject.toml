@@ -1,0 +1,105 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pointax"
+version = "0.1.0"
+description = "High-performance JAX implementation of PointMaze environments"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Waris Radji", email = "wradji64@gmail.com"}
+]
+maintainers = [
+    {name = "Waris Radji", email = "wradji64@gmail.com"}
+]
+keywords = ["reinforcement-learning", "jax", "maze", "robotics", "rl"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "jax>=0.4.0",
+    "jaxlib>=0.4.0",
+    "gymnax>=0.0.6",
+    "chex>=0.1.0",
+    "flax>=0.6.0",
+    "numpy>=1.20.0",
+    "matplotlib>=3.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "flake8>=5.0.0",
+    "mypy>=0.990",
+]
+examples = [
+    "optax>=0.1.4",
+    "distrax>=0.1.2",
+    "imageio>=2.22.0",
+]
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=0.18.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/riiswa/pointax"
+Repository = "https://github.com/riiswa/pointax"
+#Documentation = "https://pointax.readthedocs.io"
+Issues = "https://github.com/riiswa/pointax/issues"
+#Changelog = "https://github.com/riiswa/pointax/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["pointax*"]
+
+[tool.setuptools.package-data]
+pointax = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "--strict-markers --disable-warnings"
+
+[tool.coverage.run]
+source = ["pointax"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
