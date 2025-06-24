@@ -96,7 +96,6 @@ Thumbs.db
 
 # Project specific
 *.mp4
-*.gif
 *.png
 logs/
 checkpoints/

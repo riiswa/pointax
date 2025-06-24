@@ -1,5 +1,7 @@
 # Pointax: JAX-Native PointMaze Environment
 
+![PointMaze Environment Grid](https://raw.githubusercontent.com/riiswa/pointax/main/grid.gif)
+
 **High-performance JAX implementation of PointMaze environments with MuJoCo-inspired physics.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
