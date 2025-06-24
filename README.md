@@ -208,7 +208,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Original PointMaze environment from [Gymnasium Robotics](https://github.com/Farama-Foundation/Gymnasium-Robotics)
 - [Gymnax](https://github.com/RobertTLange/gymnax) for their API
 - [MuJoCo](https://github.com/google-deepmind/mujoco) physics engine for inspiration
-- JAX team for the excellent framework
+- [JAX](https://github.com/jax-ml/jax) team for the excellent framework
 
 ## Related Work
 
