@@ -495,9 +495,9 @@ if __name__ == "__main__":
     eval_key = jax.random.PRNGKey(999)
 
     # Generate keys for all episodes
-    eval_keys = jax.random.split(eval_key, 48)
+    eval_keys = jax.random.split(eval_key, 8)
 
-    # Run all 48 episodes in parallel!
+    # Run all 8 episodes in parallel!
     print("Evaluating 48 episodes in parallel...")
     successes, lengths, all_states = evaluate_agent_vmap(
         train_state, network, env, env_params, eval_keys
@@ -511,7 +511,7 @@ if __name__ == "__main__":
     os.makedirs("videos", exist_ok=True)
 
     # Prepare data for video rendering
-    for i in range(48):
+    for i in range(8):
         # Extract states for this episode
         episode_states = jax.tree.map(lambda x: x[i], all_states)
         filename = f"videos/episode_{i + 1}.mp4"
