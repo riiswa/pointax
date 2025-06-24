@@ -27,8 +27,8 @@ class EnvParams(environment.EnvParams):
 
     Attributes:
         max_steps_in_episode: Maximum steps before truncation
-        dt: Time step for physics simulation (10 Hz = 0.1)
-        goal_threshold: Distance threshold for goal achievement
+        dt: Time step for physics simulation (matches MuJoCo XML: 0.01s = 100 Hz)
+        goal_threshold: Distance threshold for goal achievement (matches gymnasium)
         max_velocity: Maximum velocity clipping value
         maze_size_scaling: Scaling factor for maze coordinates
         maze_height: Height of maze walls (for visualization)
@@ -37,6 +37,12 @@ class EnvParams(environment.EnvParams):
         continuing_task: Whether task continues after reaching goal
         reset_target: Whether to reset goal when reached in continuing task
         reward_type: 0 = sparse, 1 = dense (JAX-compatible integer)
+
+        MuJoCo-matching physics parameters:
+        robot_radius: Radius of the robot sphere (matches XML sphere size)
+        motor_gear: Motor gear ratio for force scaling (matches XML motor gear)
+        friction_coeff: Friction coefficient for collision handling (matches XML friction)
+        mass: Robot mass computed from sphere geometry and density
 
         Location arrays for different cell types:
         empty_locations: Coordinates of empty cells (0)
@@ -57,8 +63,8 @@ class EnvParams(environment.EnvParams):
         map_width: Number of columns in maze
     """
     max_steps_in_episode: int = 1000
-    dt: float = 0.1
-    goal_threshold: float = 0.45
+    dt: float = 0.01  # Matches MuJoCo XML timestep="0.01"
+    goal_threshold: float = 0.45  # Matches gymnasium success threshold
     max_velocity: float = 5.0
     maze_size_scaling: float = 1.0
     maze_height: float = 0.4
@@ -67,6 +73,12 @@ class EnvParams(environment.EnvParams):
     continuing_task: bool = False
     reset_target: bool = False
     reward_type: int = 0
+
+    # MuJoCo-matching physics parameters
+    robot_radius: float = 0.1  # Matches XML: geom size="0.1"
+    motor_gear: float = 100.0  # Matches XML: motor gear="100"
+    friction_coeff: float = 0.5  # Matches XML: friction=".5 .1 .1"
+    mass: float = 1.0  # Computed from density=1000 * sphere_volume ≈ 4.189, simplified to 1.0
 
     # Location arrays for different cell types
     empty_locations: chex.Array = None

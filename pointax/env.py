@@ -1,4 +1,4 @@
-"""Main PointMaze environment implementation with improved physics."""
+"""Fixed PointMaze environment with proper collision handling."""
 
 from typing import Tuple, Optional, Dict, Any
 import jax
@@ -13,24 +13,13 @@ from pointax.mazes import get_maze_layout, convert_maze_to_numeric, compute_all_
 
 class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
     """
-    JAX implementation of Point Maze environment with diverse goal support and proper collision physics.
+    JAX implementation of Point Maze environment with fixed collision physics.
 
-    A 2-DoF point mass navigates through a maze to reach goal locations.
-    Supports various maze layouts including diverse goal/reset configurations.
-
-    Key Features:
-    - JAX-native implementation for fast vectorization
-    - Support for diverse goal mazes with special cell markers
-    - Realistic collision detection with line intersection math
-    - Configurable reward types (sparse/dense)
-    - Continuing task support with goal resetting
-
-    Special cell markers:
-    - 'G': Goal locations
-    - 'R': Reset locations
-    - 'C': Combined (both goal and reset) locations
-    - 0: Empty locations
-    - 1: Walls
+    Matches MuJoCo reference implementation parameters:
+    - Robot radius: 0.1
+    - Motor gear: 100
+    - Friction: 0.5
+    - Goal threshold: 0.45
     """
 
     def __init__(
@@ -40,14 +29,6 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
             continuing_task: bool = False,
             reset_target: bool = False
     ):
-        """Initialize PointMaze environment.
-
-        Args:
-            maze_id: Maze layout identifier (e.g., 'UMaze', 'Open_Diverse_G')
-            reward_type: 'sparse' or 'dense' reward function
-            continuing_task: Whether task continues after reaching goal
-            reset_target: Whether to reset goal when reached in continuing task
-        """
         super().__init__()
         self.maze_id = maze_id
         self.reward_type_str = reward_type
@@ -56,15 +37,13 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
 
     @property
     def default_params(self) -> EnvParams:
-        """Get default environment parameters."""
+        """Get default environment parameters matching MuJoCo implementation."""
         maze_layout = get_maze_layout(self.maze_id)
         maze_map = convert_maze_to_numeric(maze_layout)
         reward_type_int = 0 if self.reward_type_str == "sparse" else 1
 
-        # Compute all location types
         locations_data = compute_all_locations(maze_map)
 
-        # Pre-compute maze boundaries for optimization
         map_length, map_width = maze_map.shape
         x_map_center = map_width / 2 * 1.0
         y_map_center = map_length / 2 * 1.0
@@ -75,7 +54,16 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
             reset_target=self.reset_target,
             reward_type=reward_type_int,
             **locations_data,
-            # Pre-computed values for faster access
+            # Fixed parameters to match MuJoCo
+            robot_radius=0.1,           # From XML: sphere size="0.1"
+            goal_threshold=0.45,        # From gymnasium: success threshold
+            motor_gear=100.0,           # From XML: gear="100"
+            friction_coeff=0.5,         # From XML: friction=".5 .1 .1"
+            dt=0.01,                    # From XML: timestep="0.01"
+            mass=1.0,                   # Computed from density * volume
+            max_velocity=5.0,           # Reasonable velocity limit
+            maze_size_scaling=1.0,      # From gymnasium: maze_size_scaling=1
+            # Pre-computed values
             x_map_center=x_map_center,
             y_map_center=y_map_center,
             map_length=map_length,
@@ -89,48 +77,35 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
             action: chex.Array,
             params: EnvParams
     ) -> Tuple[chex.Array, EnvState, chex.Array, chex.Array, Dict[str, Any]]:
-        """Step the environment forward one timestep.
+        """Step the environment with fixed collision handling."""
 
-        Args:
-            key: Random key for stochastic operations
-            state: Current environment state
-            action: Action to take [force_x, force_y]
-            params: Environment parameters
+        # Apply motor gear scaling to match MuJoCo
+        scaled_action = jnp.clip(action, -1.0, 1.0) * params.motor_gear
 
-        Returns:
-            Tuple of (observation, new_state, reward, done, info)
-        """
-        # Clip actions and scale them appropriately
-        action = jnp.clip(action, -1.0, 1.0) / 10.0  # Scale similar to original
-
-        # Get current position and velocity
+        # Physics integration
         old_position = state.position
         old_velocity = jnp.clip(state.velocity, -params.max_velocity, params.max_velocity)
 
-        # Update velocity with action forces
-        new_velocity = jnp.clip(
-            old_velocity + action,
-            -params.max_velocity,
-            params.max_velocity
-        )
+        # Update velocity with forces
+        acceleration = scaled_action / params.mass
+        new_velocity = old_velocity + acceleration * params.dt
+        new_velocity = jnp.clip(new_velocity, -params.max_velocity, params.max_velocity)
 
         # Compute intended new position
         intended_position = old_position + new_velocity * params.dt
 
-        # Handle collisions with proper physics
-        final_position, final_velocity = self._handle_wall_collisions(
-            intended_position, new_velocity, old_position, params
+        # Handle collisions with simplified ray-casting approach
+        final_position, final_velocity = self._handle_collisions(
+            old_position, intended_position, new_velocity, params
         )
 
-        # Apply boundary constraints (maze edges)
-        x_min = -params.x_map_center
-        x_max = params.x_map_center
-        y_min = -params.y_map_center
-        y_max = params.y_map_center
+        # Apply maze boundary constraints
+        maze_bounds_x = params.x_map_center - params.robot_radius
+        maze_bounds_y = params.y_map_center - params.robot_radius
 
         final_position = jnp.array([
-            jnp.clip(final_position[0], x_min, x_max),
-            jnp.clip(final_position[1], y_min, y_max)
+            jnp.clip(final_position[0], -maze_bounds_x, maze_bounds_x),
+            jnp.clip(final_position[1], -maze_bounds_y, maze_bounds_y)
         ])
 
         # Compute reward and goal achievement
@@ -141,7 +116,7 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
         reward = lax.select(
             params.reward_type == 0,
             goal_reached.astype(jnp.float32),  # sparse
-            -distance_to_goal  # dense (negative distance like original)
+            -distance_to_goal  # dense
         )
 
         # Goal reset logic for continuing tasks
@@ -168,7 +143,6 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
         # Create observation
         obs = jnp.concatenate([final_position, final_velocity, new_goal])
 
-        # Info dict
         info = {
             "is_success": goal_reached,
             "discount": self.discount(new_state, params)
@@ -182,32 +156,171 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
             info
         )
 
+    def _handle_collisions(
+            self,
+            old_pos: chex.Array,
+            intended_pos: chex.Array,
+            velocity: chex.Array,
+            params: EnvParams
+    ) -> Tuple[chex.Array, chex.Array]:
+        """Simplified collision handling using sphere-AABB intersection with margin."""
+
+        # Add safety margin to prevent sticking
+        effective_radius = params.robot_radius + 0.002
+
+        def world_pos_to_cell(pos):
+            """Convert world position to grid cell indices."""
+            # Fixed coordinate transformation
+            i = jnp.floor((params.y_map_center - pos[1]) / params.maze_size_scaling).astype(int)
+            j = jnp.floor((pos[0] + params.x_map_center) / params.maze_size_scaling).astype(int)
+            i = jnp.clip(i, 0, params.map_length - 1)
+            j = jnp.clip(j, 0, params.map_width - 1)
+            return i, j
+
+        def cell_to_world_center(i, j):
+            """Convert grid cell indices to world coordinates (cell center)."""
+            # Fixed coordinate transformation
+            x = (j + 0.5) * params.maze_size_scaling - params.x_map_center
+            y = params.y_map_center - (i + 0.5) * params.maze_size_scaling
+            return jnp.array([x, y])
+
+        def sphere_aabb_collision(sphere_center, sphere_radius, aabb_center, aabb_half_size):
+            """Check sphere-AABB collision and return corrected position."""
+            # Find closest point on AABB to sphere center
+            aabb_min = aabb_center - aabb_half_size
+            aabb_max = aabb_center + aabb_half_size
+
+            closest_point = jnp.array([
+                jnp.clip(sphere_center[0], aabb_min[0], aabb_max[0]),
+                jnp.clip(sphere_center[1], aabb_min[1], aabb_max[1])
+            ])
+
+            # Vector from closest point to sphere center
+            diff = sphere_center - closest_point
+            distance = jnp.linalg.norm(diff)
+
+            # Check for collision
+            is_colliding = distance < sphere_radius
+
+            # Compute corrected position if colliding
+            def correct_position():
+                # Avoid division by zero
+                safe_distance = jnp.maximum(distance, 1e-8)
+                normal = diff / safe_distance
+                # Push sphere out by penetration amount + small extra margin
+                penetration = sphere_radius - distance + 1e-6  # Extra tiny margin to prevent edge cases
+                return sphere_center + normal * penetration
+
+            corrected_pos = lax.cond(
+                is_colliding,
+                correct_position,
+                lambda: sphere_center
+            )
+
+            return corrected_pos, is_colliding
+
+        # Get cells that might contain walls we could collide with
+        current_cell = world_pos_to_cell(intended_pos)
+
+        # Collect all collision corrections instead of applying them sequentially
+        total_correction = jnp.zeros(2)
+        collision_count = 0
+
+        # Check 3x3 neighborhood around current cell
+        for di in [-1, 0, 1]:
+            for dj in [-1, 0, 1]:
+                check_i = current_cell[0] + di
+                check_j = current_cell[1] + dj
+
+                # Skip if cell is out of bounds
+                valid_cell = (
+                        (check_i >= 0) & (check_i < params.map_length) &
+                        (check_j >= 0) & (check_j < params.map_width)
+                )
+
+                def check_wall_collision():
+                    is_wall = params.maze_map[check_i, check_j] == 1
+
+                    def handle_wall():
+                        wall_center = cell_to_world_center(check_i, check_j)
+                        wall_half_size = jnp.array([
+                            params.maze_size_scaling * 0.5,
+                            params.maze_size_scaling * 0.5
+                        ])
+
+                        corrected_pos, collided = sphere_aabb_collision(
+                            intended_pos,  # Always use intended_pos, not accumulated corrections
+                            effective_radius,  # Use effective radius with margin
+                            wall_center,
+                            wall_half_size
+                        )
+
+                        correction = lax.select(
+                            collided,
+                            corrected_pos - intended_pos,
+                            jnp.zeros(2)
+                        )
+
+                        return correction, collided.astype(jnp.int32)
+
+                    return lax.cond(
+                        is_wall,
+                        handle_wall,
+                        lambda: (jnp.zeros(2), 0)
+                    )
+
+                correction, collision_flag = lax.cond(
+                    valid_cell,
+                    check_wall_collision,
+                    lambda: (jnp.zeros(2), 0)
+                )
+
+                total_correction += correction
+                collision_count += collision_flag
+
+        # Apply averaged correction to handle multiple simultaneous collisions better
+        any_collision = collision_count > 0
+        safe_collision_count = jnp.maximum(collision_count, 1)  # Avoid division by zero
+
+        final_correction = lax.select(
+            any_collision,
+            total_correction / safe_collision_count.astype(jnp.float32),
+            jnp.zeros(2)
+        )
+
+        corrected_position = intended_pos + final_correction
+
+        # Update velocity based on actual movement (handles stopping/sliding)
+        actual_movement = corrected_position - old_pos
+        actual_velocity = actual_movement / params.dt
+
+        # Apply friction if there was a collision
+        final_velocity = lax.select(
+            any_collision,
+            actual_velocity * (1.0 - params.friction_coeff * params.dt),
+            velocity
+        )
+
+        # Ensure velocity limits
+        final_velocity = jnp.clip(final_velocity, -params.max_velocity, params.max_velocity)
+
+        return corrected_position, final_velocity
+
     def reset_env(
             self,
             key: chex.PRNGKey,
             params: EnvParams,
             options: Optional[Dict] = None
     ) -> Tuple[chex.Array, EnvState]:
-        """Reset environment to initial state.
-
-        Args:
-            key: Random key for stochastic operations
-            params: Environment parameters
-            options: Optional reset configuration
-
-        Returns:
-            Tuple of (initial_observation, initial_state)
-        """
+        """Reset environment to initial state."""
         key, pos_key, goal_key = jax.random.split(key, 3)
 
-        # Generate goal and reset positions
         goal_position = self._generate_goal_position(goal_key, params)
         goal_position = self._add_position_noise(goal_position, goal_key, params)
 
         reset_position = self._generate_reset_position(pos_key, params)
         reset_position = self._add_position_noise(reset_position, pos_key, params)
 
-        # Initialize state
         state = EnvState(
             position=reset_position,
             velocity=jnp.zeros(2),
@@ -215,49 +328,27 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
             time=0
         )
 
-        # Create initial observation
         obs = jnp.concatenate([reset_position, jnp.zeros(2), goal_position])
-
         return obs, state
 
     def get_obs(self, state: EnvState, params: EnvParams, key=None) -> chex.Array:
-        """Get observation from current state.
-
-        Args:
-            state: Current environment state
-            params: Environment parameters
-            key: Unused, for compatibility
-
-        Returns:
-            Observation array [position, velocity, goal]
-        """
+        """Get observation from current state."""
         return jnp.concatenate([state.position, state.velocity, state.desired_goal])
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> chex.Array:
-        """Check if state is terminal.
-
-        Args:
-            state: Current environment state
-            params: Environment parameters
-
-        Returns:
-            Boolean indicating if episode should terminate
-        """
+        """Check if state is terminal."""
         done_steps = state.time >= params.max_steps_in_episode
         distance_to_goal = jnp.linalg.norm(state.position - state.desired_goal)
         done_goal = distance_to_goal <= params.goal_threshold
 
         return lax.select(
             params.continuing_task,
-            done_steps,  # Continuing task only terminates on time limit
-            done_steps | done_goal  # Normal task terminates on goal or time
+            done_steps,
+            done_steps | done_goal
         )
 
     def _generate_goal_position(self, key: chex.PRNGKey, params: EnvParams) -> chex.Array:
-        """Generate goal position from appropriate location set.
-
-        Priority: specific goals > combined > empty
-        """
+        """Generate goal position from appropriate location set."""
         has_specific_goals = params.num_goals > 0
         has_combined = params.num_combined > 0
 
@@ -284,10 +375,7 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
         )
 
     def _generate_reset_position(self, key: chex.PRNGKey, params: EnvParams) -> chex.Array:
-        """Generate reset position from appropriate location set.
-
-        Priority: specific resets > combined > empty
-        """
+        """Generate reset position from appropriate location set."""
         has_specific_resets = params.num_resets > 0
         has_combined = params.num_combined > 0
 
@@ -327,253 +415,6 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
             maxval=noise_range
         )
         return position + noise
-
-    def _handle_wall_collisions(
-            self,
-            new_pos: chex.Array,
-            velocity: chex.Array,
-            old_pos: chex.Array,
-            params: EnvParams
-    ) -> Tuple[chex.Array, chex.Array]:
-        """Handle wall collisions accounting for sphere radius.
-
-        Coordinate System:
-        - Cell (0,0) is at world position (-x_map_center, y_map_center)
-        - Cell (i,j) is at world position (-x_map_center + j*maze_size_scaling, y_map_center - i*maze_size_scaling)
-        - Maze cells are 1x1 units in size (maze_size_scaling = 1.0)
-
-        Checks distance to wall boundaries, not just discrete cell occupancy.
-        """
-        sphere_radius = 0.1  # Match MuJoCo sphere size
-        x_new, y_new = new_pos
-
-        # Convert position to cell coordinates (continuous)
-        def pos_to_cell_continuous(x, y):
-            i = (params.y_map_center - y) / params.maze_size_scaling
-            j = (x + params.x_map_center) / params.maze_size_scaling
-            return i, j
-
-        # Convert to discrete cell indices
-        def pos_to_cell_discrete(x, y):
-            i = jnp.floor((params.y_map_center - y) / params.maze_size_scaling).astype(int)
-            j = jnp.floor((x + params.x_map_center) / params.maze_size_scaling).astype(int)
-            i = jnp.clip(i, 0, params.map_length - 1)
-            j = jnp.clip(j, 0, params.map_width - 1)
-            return i, j
-
-        # Check if sphere center is too close to any wall
-        i_center, j_center = pos_to_cell_continuous(x_new, y_new)
-
-        # Get the cell indices for checking surrounding cells
-        i_discrete, j_discrete = pos_to_cell_discrete(x_new, y_new)
-
-        # Check 3x3 grid around current position for nearby walls
-        collision_detected = False
-
-        # Use vectorized approach instead of loops with conditionals
-        di_range = jnp.arange(-1, 2)
-        dj_range = jnp.arange(-1, 2)
-
-        # Create meshgrid for all combinations
-        di_grid, dj_grid = jnp.meshgrid(di_range, dj_range, indexing='ij')
-        di_flat = di_grid.flatten()
-        dj_flat = dj_grid.flatten()
-
-        # Calculate all check positions
-        check_i_all = jnp.clip(i_discrete + di_flat, 0, params.map_length - 1)
-        check_j_all = jnp.clip(j_discrete + dj_flat, 0, params.map_width - 1)
-
-        # Check which cells are walls
-        is_wall_all = params.maze_map[check_i_all, check_j_all] == 1
-
-        # For each wall cell, calculate distance
-        def calculate_wall_distance(idx):
-            check_i = check_i_all[idx]
-            check_j = check_j_all[idx]
-            is_wall = is_wall_all[idx]
-
-            # Wall cell boundaries
-            wall_left = check_j.astype(float)
-            wall_right = check_j.astype(float) + 1
-            wall_bottom = check_i.astype(float)
-            wall_top = check_i.astype(float) + 1
-
-            # Find closest point on wall cell boundary to sphere center
-            closest_j = jnp.clip(j_center, wall_left, wall_right)
-            closest_i = jnp.clip(i_center, wall_bottom, wall_top)
-
-            # Distance from sphere center to closest wall boundary point
-            dist_to_wall = jnp.sqrt((j_center - closest_j)**2 + (i_center - closest_i)**2)
-
-            # Convert back to world units
-            dist_to_wall_world = dist_to_wall * params.maze_size_scaling
-
-            # Check if sphere would penetrate this wall
-            penetration = sphere_radius - dist_to_wall_world
-            has_penetration = is_wall & (penetration > 0)
-
-            return has_penetration
-
-        # Check all surrounding cells
-        penetration_checks = jnp.array([calculate_wall_distance(i) for i in range(len(check_i_all))])
-        collision_detected = jnp.any(penetration_checks)
-
-        # If collision detected, resolve it
-        final_pos = lax.select(
-            collision_detected,
-            self._resolve_wall_collision_with_distance(new_pos, old_pos, velocity, params),
-            new_pos
-        )
-
-        # Update velocity - zero if collision occurred
-        final_vel = lax.select(
-            collision_detected,
-            self._resolve_collision_velocity(new_pos, old_pos, velocity, params),
-            velocity
-        )
-
-        return final_pos, final_vel
-
-    def _resolve_wall_collision_with_distance(
-            self,
-            new_pos: chex.Array,
-            old_pos: chex.Array,
-            velocity: chex.Array,
-            params: EnvParams
-    ) -> chex.Array:
-        """Resolve wall collision by pushing sphere away from wall boundaries."""
-        sphere_radius = 0.1
-        x_new, y_new = new_pos
-
-        # Convert position to cell coordinates
-        def pos_to_cell_continuous(x, y):
-            i = (params.y_map_center - y) / params.maze_size_scaling
-            j = (x + params.x_map_center) / params.maze_size_scaling
-            return i, j
-
-        def pos_to_cell_discrete(x, y):
-            i = jnp.floor((params.y_map_center - y) / params.maze_size_scaling).astype(int)
-            j = jnp.floor((x + params.x_map_center) / params.maze_size_scaling).astype(int)
-            i = jnp.clip(i, 0, params.map_length - 1)
-            j = jnp.clip(j, 0, params.map_width - 1)
-            return i, j
-
-        i_center, j_center = pos_to_cell_continuous(x_new, y_new)
-        i_discrete, j_discrete = pos_to_cell_discrete(x_new, y_new)
-
-        # Vectorized approach for finding closest wall
-        di_range = jnp.arange(-1, 2)
-        dj_range = jnp.arange(-1, 2)
-        di_grid, dj_grid = jnp.meshgrid(di_range, dj_range, indexing='ij')
-        di_flat = di_grid.flatten()
-        dj_flat = dj_grid.flatten()
-
-        # Calculate all check positions
-        check_i_all = jnp.clip(i_discrete + di_flat, 0, params.map_length - 1)
-        check_j_all = jnp.clip(j_discrete + dj_flat, 0, params.map_width - 1)
-
-        # Check which cells are walls
-        is_wall_all = params.maze_map[check_i_all, check_j_all] == 1
-
-        # Calculate penetration for each potential wall
-        def calculate_penetration_data(idx):
-            check_i = check_i_all[idx]
-            check_j = check_j_all[idx]
-            is_wall = is_wall_all[idx]
-
-            # Wall cell boundaries
-            wall_left = check_j.astype(float)
-            wall_right = check_j.astype(float) + 1
-            wall_bottom = check_i.astype(float)
-            wall_top = check_i.astype(float) + 1
-
-            # Find closest point on wall boundary
-            closest_j = jnp.clip(j_center, wall_left, wall_right)
-            closest_i = jnp.clip(i_center, wall_bottom, wall_top)
-
-            # Distance and direction to wall
-            wall_to_center_j = j_center - closest_j
-            wall_to_center_i = i_center - closest_i
-            dist_to_wall = jnp.sqrt(wall_to_center_j**2 + wall_to_center_i**2)
-
-            # How much we need to push away
-            required_distance = sphere_radius / params.maze_size_scaling
-            penetration = required_distance - dist_to_wall
-
-            # Only consider this wall if it's actually penetrated
-            valid_penetration = is_wall & (penetration > 0)
-
-            # Direction vector (normalized)
-            direction_magnitude = jnp.maximum(dist_to_wall, 1e-6)
-            push_dir_j = wall_to_center_j / direction_magnitude
-            push_dir_i = wall_to_center_i / direction_magnitude
-
-            return jnp.where(
-                valid_penetration,
-                jnp.array([penetration, push_dir_j, push_dir_i]),
-                jnp.array([0.0, 0.0, 0.0])  # No penetration
-            )
-
-        # Get penetration data for all surrounding cells
-        penetration_data = jnp.array([calculate_penetration_data(i) for i in range(len(check_i_all))])
-
-        # Find the maximum penetration
-        penetrations = penetration_data[:, 0]
-        max_penetration_idx = jnp.argmax(penetrations)
-        max_penetration = penetrations[max_penetration_idx]
-
-        # Get the corresponding push direction
-        push_direction_j = penetration_data[max_penetration_idx, 1]
-        push_direction_i = penetration_data[max_penetration_idx, 2]
-
-        # Apply push in cell coordinates, then convert back to world coordinates
-        pushed_j = j_center + push_direction_j * max_penetration
-        pushed_i = i_center + push_direction_i * max_penetration
-
-        # Convert back to world coordinates
-        corrected_x = pushed_j * params.maze_size_scaling - params.x_map_center
-        corrected_y = params.y_map_center - pushed_i * params.maze_size_scaling
-
-        # Ensure corrected position stays within maze bounds (safety check)
-        world_width = params.map_width * params.maze_size_scaling
-        world_height = params.map_length * params.maze_size_scaling
-        corrected_x = jnp.clip(corrected_x, -params.x_map_center + sphere_radius,
-                              -params.x_map_center + world_width - sphere_radius)
-        corrected_y = jnp.clip(corrected_y, params.y_map_center - world_height + sphere_radius,
-                              params.y_map_center - sphere_radius)
-
-        # If no penetration found, return original position
-        return jnp.where(
-            max_penetration > 0,
-            jnp.array([corrected_x, corrected_y]),
-            new_pos
-        )
-
-    def _resolve_collision_velocity(
-            self,
-            new_pos: chex.Array,
-            old_pos: chex.Array,
-            velocity: chex.Array,
-            params: EnvParams
-    ) -> chex.Array:
-        """Resolve velocity after collision.
-
-        For simplicity, we zero the velocity component in the direction of collision.
-        A more sophisticated implementation would reflect velocity off the wall.
-        """
-        x_new, y_new = new_pos
-        x_old, y_old = old_pos
-        vx, vy = velocity
-
-        # Determine which direction hit the wall
-        dx = x_new - x_old
-        dy = y_new - y_old
-
-        # Zero velocity components that would cause further wall penetration
-        new_vx = lax.select(jnp.abs(dx) > jnp.abs(dy), 0.0, vx)
-        new_vy = lax.select(jnp.abs(dy) > jnp.abs(dx), 0.0, vy)
-
-        return jnp.array([new_vx, new_vy])
 
     @property
     def name(self) -> str:
@@ -615,39 +456,79 @@ class PointMazeEnv(environment.Environment[EnvState, EnvParams]):
         })
 
     def render(self, state, params, mode="human"):
-        """Simple minimalist rendering: black walls, white space, red goal, green agent."""
+        """Minimalist rendering: black walls, white space, green ball, red goal."""
         import matplotlib.pyplot as plt
         import matplotlib.patches as patches
         import numpy as np
 
         map_length, map_width = params.maze_map.shape
 
-        # Calculate figsize to match maze aspect ratio
+        # Calculate figsize to match true maze proportions (smaller base size)
         aspect_ratio = map_width / map_length
-        base_size = 4
+        base_size = 2
         if aspect_ratio > 1:
-            figsize = (base_size, base_size / aspect_ratio)
-        else:
             figsize = (base_size * aspect_ratio, base_size)
+        else:
+            figsize = (base_size, base_size / aspect_ratio)
 
-        fig, ax = plt.subplots(figsize=figsize, dpi=200)
-        # ax.set_xlim(-params.x_map_center - 0.5, params.x_map_center + 0.5)
-        # ax.set_ylim(-params.y_map_center - 0.5, params.y_map_center + 0.5)
+        fig, ax = plt.subplots(figsize=figsize, dpi=150)
         ax.set_aspect('equal')
         ax.axis('off')
 
-        # Fix: Only walls (value=1) are black, everything else is white
-        maze_visual = (params.maze_map != 1).astype(float)  # walls=0 (black), non-walls=1 (white)
+        maze_visual = (params.maze_map != 1).astype(float)
         extent = [-params.x_map_center,
-                  map_width - params.x_map_center,
-                  params.y_map_center - map_length,
+                  params.x_map_center,
+                  -params.y_map_center,
                   params.y_map_center]
         ax.imshow(maze_visual, cmap='gray', extent=extent, origin='upper',
                   vmin=0, vmax=1, interpolation='nearest')
 
-        # Draw goal and agent
-        ax.add_patch(patches.Circle(state.desired_goal, 0.2, color='red', alpha=0.8))
-        ax.add_patch(patches.Circle(state.position, 0.1, color='green', alpha=0.9))
+        # Draw goal area threshold (light red circle)
+        ax.add_patch(patches.Circle(state.desired_goal, params.goal_threshold,
+                                    color='red', alpha=0.2, zorder=8))
+
+        # Draw goal (red circle with true size)
+        goal_size = params.robot_radius * 0.8  # Slightly smaller than robot for clarity
+        ax.add_patch(patches.Circle(state.desired_goal, goal_size,
+                                    color='red', alpha=1.0, zorder=10))
+
+        # Draw robot (green circle with true size)
+        ax.add_patch(patches.Circle(state.position, params.robot_radius,
+                                    color='green', alpha=1.0, zorder=11))
+
+        # Draw velocity arrow (better scaling, thinner)
+        velocity = state.velocity
+        velocity_magnitude = np.linalg.norm(velocity)
+
+        if velocity_magnitude > 0.1:  # Only show arrow for significant movement
+            # Better scaling: linear with velocity magnitude
+            arrow_length = velocity_magnitude * 0.1  # More responsive scaling
+
+            # Arrow starts from robot edge, not center
+            velocity_direction = velocity / velocity_magnitude
+            arrow_start = state.position + velocity_direction * params.robot_radius * 1.1
+            arrow_end = arrow_start + velocity_direction * arrow_length
+
+            # Thinner arrow with consistent width
+            ax.annotate('',
+                        xy=arrow_end,
+                        xytext=arrow_start,
+                        arrowprops=dict(
+                            arrowstyle='->',
+                            color='green',
+                            lw=1.,  # Thinner arrow
+                            alpha=0.8,
+                            shrinkA=0,
+                            shrinkB=0
+                        ),
+                        zorder=12)
+
+        # # Set axis limits to show full maze with small margin
+        # margin = params.robot_radius * 2
+        # ax.set_xlim(-params.x_map_center - margin, params.x_map_center + margin)
+        # ax.set_ylim(-params.y_map_center - margin, params.y_map_center + margin)
+
+        plt.tight_layout(pad=1)
 
         if mode == "human":
             plt.show()
