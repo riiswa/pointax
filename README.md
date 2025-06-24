@@ -41,7 +41,7 @@ print(f"Reward: {reward}, Success: {info['is_success']}")
 
 ## Installation
 
-From GitHub (not yet on PyPi)"
+From GitHub (not yet on PyPi):
 
 ```bash
 pip install git+https://github.com/riiswa/pointax.git
