@@ -192,10 +192,20 @@ If you use Pointax in your research, please cite:
 
 ```bibtex
 @software{pointax2025,
-  title={Pointax: JAX-Native PointMaze Environment},
-  author={Waris Radji},
-  year={2025},
-  url={https://github.com/riiswa/pointax}
+  author       = {Waris Radji},
+  title        = {Pointax: PointMaze Environment for JAX},
+  month        = oct,
+  year         = 2025,
+  publisher    = {Zenodo},
+  version      = {v0.0.1-beta},
+  doi          = {10.5281/zenodo.17252949},
+  url          = {https://doi.org/10.5281/zenodo.17252949},
+  swhid        = {swh:1:dir:d104e5f6c3135601cd33d6be9f622f5ab0d8fe29
+                   ;origin=https://doi.org/10.5281/zenodo.17252948;vi
+                   sit=swh:1:snp:2f0bc5664e10e7af473e52306d8810936882
+                   ebbb;anchor=swh:1:rel:91e5bc53b9350e429975e313eae5
+                   574501976ae8;path=riiswa-pointax-03c9448
+                  },
 }
 ```
 
